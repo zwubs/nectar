@@ -1,2 +1,2 @@
 # nectar
-A Gleam Kafka client library built from the ground up in Mug
+A Gleam Kafka client library built from the ground up using Mug

@@ -1,0 +1,16 @@
+name = "nectar"
+version = "0.0.1"
+
+description="A Gleam Kafka client library built from the ground up"
+repository = { type = "github", user = "zwubs", repo = "nectar" }
+links = [{ title = "Website", href = "https://gleam.run" }]
+
+licences = ["GPL-3.0-only"]
+
+[dependencies]
+gleam_stdlib = "~> 0.34 or ~> 1.0"
+mug = "~> 1.0"
+gleam_erlang = ">= 0.25.0 and < 1.0.0"
+
+[dev-dependencies]
+gleeunit = "~> 1.0"
