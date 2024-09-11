@@ -77,23 +77,17 @@ pub fn connect(config: ClusterConfig) {
   let sasl_result = case config.sasl {
     None -> Ok(Nil)
     Some(sasl) -> {
-      case sasl {
-        sasl.Plain(username, password) -> {
-          use sasl_handshake_response <- result.try(protocol.sasl_handshake(
-            connection,
-            sasl_handshake.Request("PLAIN"),
-          ))
-          use sasl_authenticate_response <- result.try(
-            protocol.sasl_authenticate(
-              connection,
-              sasl_authenticate.Request(<<0, username:utf8, 0, password:utf8>>),
-            ),
-          )
-          io.debug(sasl_handshake_response)
-          io.debug(sasl_authenticate_response)
-          Ok(Nil)
-        }
-      }
+      use sasl_handshake_response <- result.try(protocol.sasl_handshake(
+        connection,
+        sasl_handshake.Request(sasl.get_mechanism(sasl)),
+      ))
+      use sasl_authenticate_response <- result.try(protocol.sasl_authenticate(
+        connection,
+        sasl_authenticate.Request(sasl.encode(sasl)),
+      ))
+      io.debug(sasl_handshake_response)
+      io.debug(sasl_authenticate_response)
+      Ok(Nil)
     }
   }
   use _ <- result.try(sasl_result)
