@@ -1,4 +1,5 @@
 import gleam/bit_array
+import gleam/int
 import gleam/option.{type Option, None, Some}
 import gleam/result.{map, try}
 import nectar/error.{type Error}
@@ -33,6 +34,29 @@ pub fn int32(bit_array: BitArray) {
 
 pub fn int64(bit_array: BitArray) {
   int(bit_array, 64)
+}
+
+pub fn unsigned_var_int(bit_array: BitArray) -> DecodeResult(Int) {
+  unsigned_var_int_accumulator(bit_array, 0, 0)
+}
+
+fn unsigned_var_int_accumulator(
+  bit_array: BitArray,
+  count: Int,
+  acc: Int,
+) -> DecodeResult(Int) {
+  case bit_array {
+    <<1:size(1), int:size(7), bit_array:bits>> -> {
+      let new_acc = acc + int.bitwise_shift_left(int, count * 7)
+      unsigned_var_int_accumulator(bit_array, count + 1, new_acc)
+    }
+
+    <<0:size(1), int:size(7), bit_array:bits>> -> {
+      let num = acc + int.bitwise_shift_left(int, count * 7)
+      Ok(#(num, bit_array))
+    }
+    _ -> Error(error.InvalidVarInt)
+  }
 }
 
 pub fn bits(bit_array: BitArray, bit_count: Int) {
@@ -86,6 +110,13 @@ pub fn nullable_string(bit_array: BitArray) -> DecodeResult(Option(String)) {
     }
     _ -> Error(error.InvalidByteLength(length))
   }
+}
+
+pub fn compact_string(bit_array: BitArray) -> DecodeResult(String) {
+  use #(length, bit_array) <- try(unsigned_var_int(bit_array))
+  use #(bytes, bit_array) <- try(bytes_of_length(bit_array, length))
+  use string <- map(string_from_bytes(bytes))
+  #(string, bit_array)
 }
 
 fn string_from_bytes(bytes: BitArray) {

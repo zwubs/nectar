@@ -1,6 +1,7 @@
 import gleam/erlang/os
 import gleam/io
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import nectar/connection
 import nectar/error.{type Error}
@@ -11,24 +12,112 @@ import nectar/internal/protocol/messages/sasl_authenticate
 import nectar/internal/protocol/messages/sasl_handshake
 import nectar/internal/serializer
 import nectar/protocol
+import nectar/sasl
 
 pub fn main() {
-  io.debug(connect())
+  io.debug(run())
 }
 
-fn connect() {
-  let host = case os.get_env("KAFKA_HOST") {
-    Ok(host) -> host
-    Error(_) -> panic as "Couldn't get host."
+pub opaque type BrokerConfig {
+  BrokerConfig(host: String, port: Int)
+}
+
+const default_broker_config = BrokerConfig("localhost", 9092)
+
+pub type Sasl {
+  Plain
+}
+
+pub opaque type ClusterConfig {
+  ClusterConfig(
+    broker: BrokerConfig,
+    client_id: String,
+    tls: Bool,
+    sasl: Option(sasl.Sasl),
+  )
+}
+
+const default_cluster_config = ClusterConfig(
+  default_broker_config,
+  "",
+  False,
+  None,
+)
+
+pub fn new(host: String, port: Int, client_id: String) {
+  ClusterConfig(
+    ..default_cluster_config,
+    broker: BrokerConfig(host, port),
+    client_id:,
+  )
+}
+
+pub fn tls(cluster: ClusterConfig, tls: Bool) {
+  ClusterConfig(..cluster, tls:)
+}
+
+pub fn sasl(cluster: ClusterConfig, sasl: sasl.Sasl) {
+  ClusterConfig(..cluster, sasl: Some(sasl))
+}
+
+pub type Cluster {
+  Cluster(config: ClusterConfig, connection: connection.Connection)
+}
+
+pub fn connect(config: ClusterConfig) {
+  use connection <- result.try(connection.new(
+    config.broker.host,
+    config.broker.port,
+    10_000,
+    config.tls,
+  ))
+
+  let _ = io.debug(protocol.api_versions(connection))
+
+  let sasl_result = case config.sasl {
+    None -> Ok(Nil)
+    Some(sasl) -> {
+      case sasl {
+        sasl.Plain(username, password) -> {
+          use sasl_handshake_response <- result.try(protocol.sasl_handshake(
+            connection,
+            sasl_handshake.Request("PLAIN"),
+          ))
+          use sasl_authenticate_response <- result.try(
+            protocol.sasl_authenticate(
+              connection,
+              sasl_authenticate.Request(<<0, username:utf8, 0, password:utf8>>),
+            ),
+          )
+          io.debug(sasl_handshake_response)
+          io.debug(sasl_authenticate_response)
+          Ok(Nil)
+        }
+      }
+    }
   }
-  let username = case os.get_env("KAFKA_USERNAME") {
-    Ok(username) -> username
-    Error(_) -> panic as "Couldn't get username."
-  }
-  let password = case os.get_env("KAFKA_PASSWORD") {
-    Ok(username) -> username
-    Error(_) -> panic as "Couldn't get password."
-  }
+  use _ <- result.try(sasl_result)
+  Ok(Cluster(config, connection))
+}
+
+pub type Message {
+  Message(
+    offset: Int,
+    timestamp: Int,
+    key: Option(BitArray),
+    value: Option(BitArray),
+  )
+}
+
+pub type Payload {
+  Payload(topic: String, partition: Int, message: Message)
+}
+
+fn run() {
+  let assert Ok(host) = os.get_env("KAFKA_HOST")
+  let assert Ok(username) = os.get_env("KAFKA_USERNAME")
+  let assert Ok(password) = os.get_env("KAFKA_PASSWORD")
+  let assert Ok(topic) = os.get_env("KAFKA_TOPIC")
 
   let sasl_handshake_request = sasl_handshake.Request("PLAIN")
   let sasl_authenticate_request =
@@ -39,9 +128,10 @@ fn connect() {
   let _ = io.debug(protocol.sasl_handshake(connection, sasl_handshake_request))
   let _ =
     io.debug(protocol.sasl_authenticate(connection, sasl_authenticate_request))
+
   use groups <- result.try(protocol.list_groups(connection))
   io.debug(groups)
-  let request = metadata.Request([metadata.RequestTopic("test-topic")])
+  let request = metadata.Request([metadata.RequestTopic(topic)])
   use metadata <- result.try(protocol.metadata(connection, request))
   io.debug(metadata)
   use topic <- try(list.first(metadata.topics))
@@ -88,11 +178,13 @@ fn connect() {
     result.all(
       list.map(topic.partitions, fn(partition) {
         use offset <- try(list.first(partition.old_style_offsets))
-        Ok(fetch.RequestPartition(partition.index, offset - 10, 1_048_576))
+        Ok(fetch.RequestPartition(partition.index, offset - 1, 1_048_576))
       }),
     )
     |> result.replace_error(Nil),
   )
+
+  io.debug(partitions)
 
   let fetch_request =
     fetch.Request(
@@ -104,6 +196,7 @@ fn connect() {
   use fetch_response <- result.try(
     io.debug(protocol.fetch(broker_connection, fetch_request)),
   )
+  io.debug(fetch_response)
   // use group <- try(first_element(groups.groups))
   // use group_descriptions <- result.try(
   //   protocol.describe_groups(connection, [group.id]),

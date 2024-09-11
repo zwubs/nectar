@@ -6,6 +6,8 @@ pub type Error {
   BytesOutOfRange(bytes_left: Int, byte_requested: Int)
   InvalidString
   InvalidByteLength(length: Int)
+  InvalidVarInt
+  PayloadTooBig
   InvalidErrorCode(error_code: Int)
   InvalidApiKey(api_key: Int)
   InvalidResponse(error: Error)
@@ -13,6 +15,5 @@ pub type Error {
   SSLError(ssl_error: ssl.Error)
   KafkaError(error_code: error_code.ErrorCode)
   TopicNotFound(name: String)
-  PayloadTooBig
   Unknown
 }

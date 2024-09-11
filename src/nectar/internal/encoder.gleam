@@ -1,5 +1,6 @@
 import gleam/bit_array
 import gleam/bytes_builder.{type BytesBuilder}
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
@@ -22,6 +23,27 @@ pub fn int32(builder: BytesBuilder, int: Int) -> BytesBuilder {
 
 pub fn int64(builder: BytesBuilder, int: Int) -> BytesBuilder {
   int_of_size(builder, int, 64)
+}
+
+pub fn unsigned_var_int(builder: BytesBuilder, int: Int) -> BytesBuilder {
+  unsigned_var_int_accumulator(builder, int)
+}
+
+pub fn unsigned_var_int_accumulator(
+  builder: BytesBuilder,
+  int: Int,
+) -> BytesBuilder {
+  let segment = int.bitwise_and(int, 0b01111111)
+  let int = int.bitwise_shift_right(int, 7)
+  let segment = case int {
+    0 -> segment
+    _ -> int.bitwise_or(segment, 0b10000000)
+  }
+  let builder = bytes_builder.append(builder, <<segment:int-size(8)>>)
+  case int {
+    0 -> builder
+    _ -> unsigned_var_int_accumulator(builder, int)
+  }
 }
 
 pub fn string(builder: BytesBuilder, string: String) -> BytesBuilder {
