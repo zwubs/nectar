@@ -11,6 +11,9 @@ fn out_of_range(bit_array: BitArray, byte_count: Int) -> error.Error {
 type DecodeResult(value) =
   Result(#(value, BitArray), error.Error)
 
+type Decoder(value) =
+  fn(BitArray) -> DecodeResult(value)
+
 fn int(bit_array: BitArray, bit_count: Int) -> DecodeResult(Int) {
   case bit_array {
     <<int:signed-size(bit_count), bit_array:bytes>> -> {
@@ -124,40 +127,26 @@ fn string_from_bytes(bytes: BitArray) {
   |> result.replace_error(error.InvalidString)
 }
 
-type DecodeArrayResult(value, error) =
-  Result(#(List(value), BitArray), error)
-
-type ArrayParser(value, error) =
-  fn(BitArray) -> Result(#(value, BitArray), error)
-
 pub fn array(
   bit_array: BitArray,
-  parser: ArrayParser(value, error.Error),
-) -> DecodeArrayResult(value, error.Error) {
+  decoder: Decoder(value),
+) -> DecodeResult(List(value)) {
   use #(length, bit_array) <- try(int32(bit_array))
-  use #(list, bit_array) <- map(array_of_length(bit_array, parser, length))
+  use #(list, bit_array) <- map(array_elements(bit_array, decoder, [], length))
   #(list, bit_array)
-}
-
-fn array_of_length(
-  bit_array: BitArray,
-  parser: ArrayParser(value, error),
-  length: Int,
-) -> DecodeArrayResult(value, error) {
-  array_elements(bit_array, parser, [], length)
 }
 
 fn array_elements(
   bit_array: BitArray,
-  parser: ArrayParser(value, error),
+  decoder: Decoder(value),
   values: List(value),
   length: Int,
-) -> DecodeArrayResult(value, error) {
+) -> DecodeResult(List(value)) {
   case length {
     l if l < 1 -> Ok(#(values, bit_array))
     _ -> {
-      use #(value, bit_array) <- try(parser(bit_array))
-      array_elements(bit_array, parser, [value, ..values], length - 1)
+      use #(value, bit_array) <- try(decoder(bit_array))
+      array_elements(bit_array, decoder, [value, ..values], length - 1)
     }
   }
 }
